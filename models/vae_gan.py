@@ -70,7 +70,7 @@ class Discriminator(nn.Module):
 		super().__init__()
 		self.in_channels = in_channels
 		self.conv1 = nn.Conv2d(self.in_channels, 32, 5, 1, 2) # 32 x 64 x 64
-		self.relu = nn.ReLU()
+		self.relu1 = nn.ReLU()
 		self.downsample = nn.Sequential(
 			nn.Conv2d(32, 128, 5, 2, 2), # 128 x 32 x 32
 			nn.BatchNorm2d(128),
@@ -84,21 +84,30 @@ class Discriminator(nn.Module):
 		)
 		self.fc1 = nn.Linear(256 * 8 * 8, 512)
 		self.bnorm = nn.BatchNorm1d(512)
+		self.relu2 = nn.ReLU()
+
 		self.fc2 = nn.Linear(512, 1)
 		self.sig = nn.Sigmoid()
-		
+
+		self.relu3 = nn.ReLU()
+
 	def forward(self, x):
 		B = x.shape[0]
 		x = self.conv1(x)
-		x = self.relu(x)
-
+		x = self.relu1(x)
 		x = self.downsample(x)
 
 		x = x.view(B, -1)
 		x = self.fc1(x)
 		x = self.bnorm(x)
-		x = self.relu(x)
+		x = self.relu2(x)
 
 		x = self.fc2(x)
 		x = self.sig(x)
+		return x
+	
+	def features_forward(self, x):
+		x = self.conv1(x)
+		x = self.relu3(x)
+		x = self.downsample(x)
 		return x
