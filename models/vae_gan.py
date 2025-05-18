@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -6,17 +7,17 @@ class Encoder(nn.Module):
 		super().__init__()
 		self.in_channels = in_channels
 		self.downsample = nn.Sequential(
-			nn.Conv2d(self.in_channels, 64, 5, 2, 2), # 64 x 32 x 32
+			nn.Conv2d(self.in_channels, 64, 5, 2, 2), # 64 x 16 x 16
 			nn.BatchNorm2d(64),
 			nn.ReLU(),
-			nn.Conv2d(64, 128, 5, 2, 2), # 128 x 16 x 16
+			nn.Conv2d(64, 128, 5, 2, 2), # 128 x 8 x 8
 			nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.Conv2d(128, 256, 5, 2, 2), # 256 x 8 x 8
+			nn.Conv2d(128, 256, 5, 2, 2), # 256 x 4 x 4
 			nn.BatchNorm2d(256),
 			nn.ReLU()
 		)
-		self.fc = nn.Linear(256 * 8 * 8, 2048)
+		self.fc = nn.Linear(256 * 4 * 4, 2048)
 		self.bnorm = nn.BatchNorm1d(2048)
 		self.relu = nn.ReLU()
 
@@ -34,14 +35,15 @@ class Encoder(nn.Module):
 
 		mu = self.mu(x)
 		logvar = self.logvar(x)
+		logvar = torch.clamp(logvar, min=-10, max=10)
 		return mu, logvar
 
 
 class Decoder(nn.Module):
 	def __init__(self, latent_dim): #Batch_size, latent_dim
 		super().__init__()
-		self.fc = nn.Linear(latent_dim, 256 * 8 * 8)
-		self.bnorm = nn.BatchNorm1d(256 * 8 * 8)
+		self.fc = nn.Linear(latent_dim, 256 * 4 * 4)
+		self.bnorm = nn.BatchNorm1d(256 * 4 * 4)
 		self.relu = nn.ReLU()
 		self.upsample = nn.Sequential(
 			nn.ConvTranspose2d(256, 128, 5, 2, 2, output_padding=1),
@@ -59,7 +61,7 @@ class Decoder(nn.Module):
 		x = self.fc(x)
 		x = self.bnorm(x)
 		x = self.relu(x)
-		x = x.reshape(B, 256, 8, 8)
+		x = x.reshape(B, 256, 4, 4)
 		x = self.upsample(x)
 		x = self.tanh(x)
 		return x
@@ -69,25 +71,25 @@ class Discriminator(nn.Module):
 	def __init__(self, in_channels, latent_dim):
 		super().__init__()
 		self.in_channels = in_channels
-		self.conv1 = nn.Conv2d(self.in_channels, 32, 5, 1, 2) # 32 x 64 x 64
+		self.conv1 = nn.Conv2d(self.in_channels, 32, 5, 1, 2) # 32 x 32 x 32
 		self.relu1 = nn.ReLU()
 		self.downsample = nn.Sequential(
-			nn.Conv2d(32, 128, 5, 2, 2), # 128 x 32 x 32
+			nn.Conv2d(32, 128, 5, 2, 2), # 128 x 16 x 16
 			nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.Conv2d(128, 256, 5, 2, 2), # 256 x 16 x 16
+			nn.Conv2d(128, 256, 5, 2, 2), # 256 x 8 x 8
 			nn.BatchNorm2d(256),
 			nn.ReLU(),
-			nn.Conv2d(256, 256, 5, 2, 2), # 256 x 8 x 8
+			nn.Conv2d(256, 256, 5, 2, 2), # 256 x 4 x 4
 			nn.BatchNorm2d(256),
 			nn.ReLU()
 		)
-		self.fc1 = nn.Linear(256 * 8 * 8, 512)
+		self.fc1 = nn.Linear(256 * 4 * 4, 512)
 		self.bnorm = nn.BatchNorm1d(512)
 		self.relu2 = nn.ReLU()
 
 		self.fc2 = nn.Linear(512, 1)
-		self.sig = nn.Sigmoid()
+		# self.sig = nn.Sigmoid()
 
 		self.relu3 = nn.ReLU()
 
@@ -103,7 +105,7 @@ class Discriminator(nn.Module):
 		x = self.relu2(x)
 
 		x = self.fc2(x)
-		x = self.sig(x)
+		# x = self.sig(x)
 		return x
 	
 	def features_forward(self, x):
