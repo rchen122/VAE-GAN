@@ -35,8 +35,8 @@ def log_samples(epoch, encoder, decoder, dataloader, device, num_images):
 
         def save_grid(images, filename):
             images = (images + 1) / 2  
-            grid = torch.utils.make_grid(images, nrow=8, padding=2)
-            torch.utils.save_image(grid, 'output_samples' + filename)
+            grid = torchvision.utils.make_grid(images, nrow=4, padding=2)
+            torchvision.utils.save_image(grid, 'output_samples/' + filename)
 
         save_grid(real_batch, f"real_epoch_{epoch}.png")
         save_grid(recon, f"recon_epoch_{epoch}.png")

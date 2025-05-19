@@ -6,6 +6,8 @@ class Encoder(nn.Module):
 	def __init__(self, in_channels, latent_dim):
 		super().__init__()
 		self.in_channels = in_channels
+		self.latent_dim = latent_dim
+		
 		self.downsample = nn.Sequential(
 			nn.Conv2d(self.in_channels, 64, 5, 2, 2), # 64 x 16 x 16
 			nn.BatchNorm2d(64),
