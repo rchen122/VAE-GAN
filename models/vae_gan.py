@@ -7,16 +7,16 @@ class Encoder(nn.Module):
 		super().__init__()
 		self.in_channels = in_channels
 		self.latent_dim = latent_dim
-		
+
 		self.downsample = nn.Sequential(
 			nn.Conv2d(self.in_channels, 64, 5, 2, 2), # 64 x 16 x 16
-			nn.BatchNorm2d(64),
+			# nn.BatchNorm2d(64),
 			nn.ReLU(),
 			nn.Conv2d(64, 128, 5, 2, 2), # 128 x 8 x 8
-			nn.BatchNorm2d(128),
+			# nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Conv2d(128, 256, 5, 2, 2), # 256 x 4 x 4
-			nn.BatchNorm2d(256),
+			# nn.BatchNorm2d(256),
 			nn.ReLU()
 		)
 		self.fc = nn.Linear(256 * 4 * 4, 2048)
@@ -45,23 +45,26 @@ class Decoder(nn.Module):
 	def __init__(self, latent_dim): #Batch_size, latent_dim
 		super().__init__()
 		self.fc = nn.Linear(latent_dim, 256 * 4 * 4)
-		self.bnorm = nn.BatchNorm1d(256 * 4 * 4)
+		# self.bnorm = nn.BatchNorm1d(256 * 4 * 4)
 		self.relu = nn.ReLU()
 		self.upsample = nn.Sequential(
+			nn.ConvTranspose2d(256, 256, 5, 2, 2, output_padding=1),
+			# nn.BatchNorm2d(256),
+			nn.LeakyReLU(0.2),
 			nn.ConvTranspose2d(256, 128, 5, 2, 2, output_padding=1),
-			nn.BatchNorm2d(128),
-			nn.ReLU(),
+			# nn.BatchNorm2d(128),
+			nn.LeakyReLU(0.2),
 			nn.ConvTranspose2d(128, 32, 5, 2, 2, output_padding=1),
-			nn.BatchNorm2d(32),
-			nn.ReLU(),
-			nn.ConvTranspose2d(32, 3, 5, 2, 2, output_padding=1),
+			# nn.BatchNorm2d(32),
+			nn.LeakyReLU(0.2),
+			nn.Conv2d(32, 3, 3, 1, 1),
 		)
 		self.tanh = nn.Tanh()
 
 	def forward(self, x):
 		B = x.shape[0]
 		x = self.fc(x)
-		x = self.bnorm(x)
+		# x = self.bnorm(x)
 		x = self.relu(x)
 		x = x.reshape(B, 256, 4, 4)
 		x = self.upsample(x)
@@ -115,3 +118,32 @@ class Discriminator(nn.Module):
 		x = self.relu3(x)
 		x = self.downsample(x)
 		return x
+	
+
+class VAE(nn.Module):
+	def __init__(self, in_channel, latent_dim):
+		super().__init__()
+		self.in_channel = in_channel
+		self.latent_dim = latent_dim
+		self.encoder = Encoder(in_channel, latent_dim)
+		self.decoder = Decoder(latent_dim)
+
+	def encode(self, x):
+		return self.encoder(x)
+	
+	def reparameterize(self, mu, logvar):
+		std = torch.exp(0.5 * logvar)
+		eps = torch.randn_like(std)
+		Z = mu + std * eps
+		return Z
+	
+	def decode(self, x):
+		return self.decoder(x)
+
+	def forward(self, x):
+		mu, logvar = self.encoder(x)
+		Z = self.reparameterize(mu, logvar)
+
+		x_recon = self.decode(Z)
+
+		return mu, logvar, x_recon

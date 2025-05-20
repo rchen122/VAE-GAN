@@ -12,7 +12,6 @@ def train_loop(config, load_model):
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	print(f"Device: {device}")
 	torch.autograd.set_detect_anomaly(True)
-	# scaler= torch.GradScaler('cuda')
 
 	train_config = config['train']
 	model_config = config['model']
@@ -24,8 +23,8 @@ def train_loop(config, load_model):
 	encoder = vae_gan.Encoder(in_channel, latent_dim).to(device)
 	decoder = vae_gan.Decoder(latent_dim).to(device)
 	discrim = vae_gan.Discriminator(in_channel, latent_dim).to(device)
-	enc_opt = torch.optim.Adam(encoder.parameters(), lr=1e-5)
-	dec_opt = torch.optim.Adam(decoder.parameters(), lr=1e-5)
+	enc_opt = torch.optim.Adam(encoder.parameters(), lr=1e-4)
+	dec_opt = torch.optim.Adam(decoder.parameters(), lr=1e-4)
 	dis_opt = torch.optim.Adam(discrim.parameters(), lr=1e-4)
 	bce = nn.BCEWithLogitsLoss()
 	mse = nn.MSELoss()
@@ -44,19 +43,22 @@ def train_loop(config, load_model):
 		epoch_start = 1
 
 
-
+	gan_flag = False # GAN Training
 	print("Starting Training Loop")
-	for epoch in range(epoch_start, epochs):
+	for epoch in range(epoch_start, epochs + 1):
 		running_disc = 0
 		running_enc = 0
 		running_dec = 0
 
+		recon_min = 0
+		recon_max = 0
+		recon_mean = 0
 		for images, _ in train_loader:
 			images = images.to(device)
 			B = images.size(0)
 
 			# DISCRIMINATOR
-			if epoch > 10:
+			if epoch > 10 and gan_flag:
 				dis_opt.zero_grad()
 				with torch.no_grad():
 					mu, logvar = encoder(images)
@@ -89,7 +91,7 @@ def train_loop(config, load_model):
 			Z = mu + std * eps
 			x_recon = decoder(Z) # VAE DECODING
 			
-			if epoch > 10:	
+			if epoch > 10 and gan_flag:	
 				feat_fake = discrim.features_forward(x_recon) #feature matching loss	
 				feat_real = discrim.features_forward(images).detach()
 				l_dis = mse(feat_fake, feat_real)	
@@ -105,8 +107,9 @@ def train_loop(config, load_model):
 				l_gan = torch.tensor(0.0, device=device)
 				l_dis = mse(x_recon, images)
 			
-			l_prior = kl_divergence(mu, logvar)
-			l_decoder = l_dis + l_gan 
+			beta = 0.1
+			l_prior = beta * kl_divergence(mu, logvar)
+			l_decoder = l_dis + 0.2 * l_gan 
 			l_encoder = l_prior + l_dis
 			l_total = l_decoder + l_encoder
 
@@ -118,9 +121,13 @@ def train_loop(config, load_model):
 			running_dec += l_decoder.item()
 			running_disc += l_gan_dis.item()
 
+			recon_min += x_recon.min()
+			recon_max += x_recon.max()
+			recon_mean += x_recon.mean()
+		print(f"Recon Min: {recon_min/len(train_loader):.3f}, Recon Max: {recon_max/len(train_loader):.3f}, Recon Mean: {recon_mean/len(train_loader):.3f}")
 		print(f"Epoch [{epoch}/{epochs}], Encoder Loss: {running_enc/len(train_loader):.4f}, Decoder Loss: {running_dec/len(train_loader):.4f}, Discrim Loss: {running_disc/len(train_loader):.4f}")
 		total_loss = l_encoder.item() + l_decoder.item() + l_gan_dis.item()
-		if total_loss < best_loss and epoch != 0:
+		if total_loss < best_loss:
 			best_loss = total_loss
 			torch.save({
 				'encoder': encoder.state_dict(),
@@ -129,7 +136,7 @@ def train_loop(config, load_model):
 				'epoch': epoch,
 				'loss': best_loss,
 			}, train_config['dst'] + 'best_checkpoint.pth')
-		if epoch % 10 == 0 and epoch != 0: # every 25 runs:
+		if epoch % 10 == 0: # every 25 runs:
 			torch.save({
 				'encoder': encoder.state_dict(),
 				'decoder': decoder.state_dict(),
@@ -137,7 +144,7 @@ def train_loop(config, load_model):
 				'epoch': epoch,
 				'loss': best_loss,
 			}, train_config['dst'] + f'{epoch}_checkpoint.pth')
-			log_samples(epoch, encoder, decoder, train_loader, device, 16)
+		log_samples(epoch, encoder, decoder, train_loader, device, 4)
 		torch.save({
 			'encoder': encoder.state_dict(),
 			'decoder': decoder.state_dict(),

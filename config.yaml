@@ -4,4 +4,4 @@ model:
 train:
   epochs: 100
   batch_size: 64
-  dst: 'logs/run1/'
+  dst: 'logs/run3/'
