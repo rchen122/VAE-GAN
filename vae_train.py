@@ -5,30 +5,8 @@ import argparse
 import yaml
 import torchvision
 # from torch.optim.lr_scheduler import CosineAnnealingLR
-from util import trainLoader, kl_divergence
+from util import *
 import time
-
-def log_samples(epoch, vae, dataloader, device, num_images):
-	vae.eval()
-
-	with torch.no_grad():
-		real_batch = next(iter(dataloader))[0].to(device)[:num_images]
-
-		mu, logvar, recon = vae(real_batch)
-
-		z_random = torch.randn(num_images, vae.latent_dim).to(device)
-		generated = vae.decode(z_random)
-
-		def save_grid(images, filename):
-			images = (images + 1) / 2  
-			grid = torchvision.utils.make_grid(images, nrow=2, padding=2)
-			torchvision.utils.save_image(grid, 'output_samples/run3/' + filename)
-
-		# save_grid(real_batch, f"real_epoch_{epoch}.png")
-		save_grid(recon, f"recon_epoch_{epoch}.png")
-		save_grid(generated, f"gen_epoch_{epoch}.png")
-
-	vae.train()
 
 def train_loop(config, load_model):
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,8 +53,10 @@ def train_loop(config, load_model):
 	print("Starting Training Loop")
 	for epoch in range(epoch_start, epochs + 1):
 		running_vae = 0
-
-		recon_min, recon_max, recon_mean = 0, 0, 0
+		running_kl_loss = 0
+		running_logvar = 0
+		print(f"Running Epoch {epoch}")
+		# recon_min, recon_max, recon_mean = 0, 0, 0
 		for images, _ in train_loader:
 			images = images.to(device)
 			B = images.size(0)
@@ -85,14 +65,12 @@ def train_loop(config, load_model):
 			vae_opt.zero_grad()
 			mu, logvar, x_recon = vae(images)
 			l_dis = mse(x_recon, images)
-			if epoch > 10:
-				beta = min(0.01, 0.001 * epoch)
-				l_prior = beta * kl_divergence(mu, logvar)
-			else: 
-				l_prior = torch.tensor(0.0, device=device)
+
+			beta = 0.01
+			kl_div, l_prior = loss_fn(epoch, beta, mu, logvar, device)
 			l_vae = l_prior + l_dis
 
-			l_vae.backward() # MODIFIED
+			l_vae.backward() 
 			# print(f"l_prior: {l_prior.item()}, mu: {mu.mean()}, {mu.std()}, logvar: {logvar.mean()}, {logvar.std()}")
 			# # Gradient Debugging
 			# total_grad = 0
@@ -106,39 +84,40 @@ def train_loop(config, load_model):
 
 			torch.nn.utils.clip_grad_norm_(vae.parameters(), max_norm=10.0)
 			vae_opt.step()
-
 			running_vae += l_vae.item()
+			running_kl_loss += kl_div
+			running_logvar += logvar.mean().item()
 
-			recon_min += x_recon.min()
-			recon_max += x_recon.max()
-			recon_mean += x_recon.mean()
+			# recon_min += x_recon.min()
+			# recon_max += x_recon.max()
+			# recon_mean += x_recon.mean()
 
-		print(f"Recon Min: {recon_min/len(train_loader):.3f}, Recon Max: {recon_max/len(train_loader):.3f}, Recon Mean: {recon_mean/len(train_loader):.3f}")
+		# print(f"Recon Min: {recon_min/len(train_loader):.3f}, Recon Max: {recon_max/len(train_loader):.3f}, Recon Mean: {recon_mean/len(train_loader):.3f}")
+		print(f"KL_div: {running_kl_loss/len(train_loader)}, Logvar: {running_logvar/len(train_loader)}")
 		print(f"Epoch [{epoch}/{epochs}], Vae Loss: {running_vae/len(train_loader):.4f}")
 		total_loss = l_vae.item()
 		if total_loss < best_loss:
 			best_loss = total_loss
 			torch.save({
 				'vae': vae.state_dict(),
-				# 'discriminator': discrim.state_dict(), 
 				'epoch': epoch,
 				'loss': best_loss,
 			}, train_config['dst'] + 'best_checkpoint.pth')
 		if epoch % 10 == 0: # every 25 runs:
 			torch.save({
 				'vae': vae.state_dict(),
-				# 'discriminator': discrim.state_dict(), 
 				'epoch': epoch,
 				'loss': best_loss,
 			}, train_config['dst'] + f'{epoch}_checkpoint.pth')
-		log_samples(epoch, vae, train_loader, device, 4)
 		torch.save({
 			'vae': vae.state_dict(),
-			# 'discriminator': discrim.state_dict(), 
 			'epoch': epoch,
 			'loss': best_loss,
 			}, train_config['dst'] + 'last_checkpoint.pth')
-
+		
+		log_samples(epoch, vae, train_loader, device, 4)
+		if epoch % 2 == 1:
+			visualize_latent_space(epoch, vae, train_loader, device, "pca", 10000)
 
 
 

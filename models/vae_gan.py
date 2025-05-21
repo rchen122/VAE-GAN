@@ -10,18 +10,15 @@ class Encoder(nn.Module):
 
 		self.downsample = nn.Sequential(
 			nn.Conv2d(self.in_channels, 64, 5, 2, 2), # 64 x 16 x 16
-			# nn.BatchNorm2d(64),
 			nn.ReLU(),
 			nn.Conv2d(64, 128, 5, 2, 2), # 128 x 8 x 8
-			# nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Conv2d(128, 256, 5, 2, 2), # 256 x 4 x 4
-			# nn.BatchNorm2d(256),
 			nn.ReLU()
 		)
 		self.fc = nn.Linear(256 * 4 * 4, 2048)
 		self.bnorm = nn.BatchNorm1d(2048)
-		self.relu = nn.ReLU()
+		self.relu = nn.LeakyReLU(0.2)
 
 		self.mu = nn.Linear(2048, latent_dim)
 		self.logvar = nn.Linear(2048, latent_dim)
@@ -51,6 +48,7 @@ class Decoder(nn.Module):
 			nn.ConvTranspose2d(256, 256, 5, 2, 2, output_padding=1),
 			# nn.BatchNorm2d(256),
 			nn.LeakyReLU(0.2),
+			nn.Dropout2d(0.3),
 			nn.ConvTranspose2d(256, 128, 5, 2, 2, output_padding=1),
 			# nn.BatchNorm2d(128),
 			nn.LeakyReLU(0.2),
